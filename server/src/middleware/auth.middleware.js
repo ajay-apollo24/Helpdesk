@@ -1,6 +1,6 @@
 const User = require('../models/User');
 const logger = require('../utils/logger');
-const { USER_STATUS } = require('../../../shared/constants');
+const { USER_STATUS, USER_ROLES } = require('../../../shared/constants');
 
 // Middleware to check if user is authenticated
 exports.isAuthenticated = async (req, res, next) => {
@@ -108,4 +108,17 @@ exports.isWithinShift = async (req, res, next) => {
     logger.error('Shift check middleware error:', error);
     res.status(500).json({ message: 'Error checking shift hours' });
   }
+};
+
+// Middleware to check if user is admin
+exports.isAdmin = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  if (req.user.role !== USER_ROLES.ADMIN) {
+    return res.status(403).json({ message: 'Admin access required' });
+  }
+
+  next();
 }; 

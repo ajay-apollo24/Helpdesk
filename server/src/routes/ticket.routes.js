@@ -7,6 +7,9 @@ const { validateTicket } = require('../middleware/validation');
 // Get all tickets with filters
 router.get('/', isAuthenticated, ticketController.getTickets);
 
+// Get ticket metrics (must be before /:id routes)
+router.get('/metrics', isAuthenticated, ticketController.getTicketMetrics);
+
 // Get ticket by ID
 router.get('/:id', isAuthenticated, ticketController.getTicketById);
 
@@ -30,8 +33,5 @@ router.get('/:id/attachments', isAuthenticated, ticketController.getTicketAttach
 
 // Upload attachment to ticket
 router.post('/:id/attachments', isAuthenticated, ticketController.uploadAttachment);
-
-// Get ticket metrics
-router.get('/metrics', isAuthenticated, ticketController.getTicketMetrics);
 
 module.exports = router; 

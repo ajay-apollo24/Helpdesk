@@ -59,8 +59,10 @@ app.use(session({
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-    maxAge: 24 * 60 * 60 * 1000 // 1 day
-  }
+    maxAge: 24 * 60 * 60 * 1000, // 1 day
+    path: '/'
+  },
+  name: 'connect.sid'
 }));
 
 // Static files
@@ -76,12 +78,14 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/helpdesk'
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');
+const userRoutes = require('./routes/user.routes');
 const ticketRoutes = require('./routes/ticket.routes');
 const orderRoutes = require('./routes/order.routes');
 const departmentRoutes = require('./routes/department.routes');
 
 // Apply routes
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/departments', departmentRoutes);

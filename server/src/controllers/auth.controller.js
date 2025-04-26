@@ -27,8 +27,13 @@ const register = async (req, res) => {
     
     // Start session
     req.session.userId = user._id;
+    await req.session.save();
 
-    res.status(201).json({ message: 'User registered successfully', user: user.getPublicProfile() });
+    res.status(201).json({ 
+      message: 'User registered successfully', 
+      user: user.getPublicProfile(),
+      sessionId: req.sessionID
+    });
   } catch (error) {
     logger.error('Registration error:', error);
     res.status(500).json({ message: 'Error registering user' });
@@ -41,7 +46,7 @@ const login = async (req, res) => {
     const { email, password } = req.body;
 
     // Find user and check status
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+password');
     if (!user || user.status !== USER_STATUS.ACTIVE) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -58,8 +63,13 @@ const login = async (req, res) => {
 
     // Start session
     req.session.userId = user._id;
+    await req.session.save();
 
-    res.json({ message: 'Login successful', user: user.getPublicProfile() });
+    res.json({ 
+      message: 'Login successful', 
+      user: user.getPublicProfile(),
+      sessionId: req.sessionID
+    });
   } catch (error) {
     logger.error('Login error:', error);
     res.status(500).json({ message: 'Error during login' });
@@ -69,7 +79,14 @@ const login = async (req, res) => {
 // Logout user
 const logout = async (req, res) => {
   try {
-    req.session.destroy();
+    await new Promise((resolve, reject) => {
+      req.session.destroy((err) => {
+        if (err) reject(err);
+        resolve();
+      });
+    });
+    
+    res.clearCookie('connect.sid');
     res.json({ message: 'Logout successful' });
   } catch (error) {
     logger.error('Logout error:', error);

@@ -19,12 +19,13 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: true,
-    minlength: 8
+    minlength: 8,
+    select: false // Don't include password by default in queries
   },
   role: {
     type: String,
-    enum: Object.values(USER_ROLES),
-    default: USER_ROLES.CUSTOMER
+    enum: [USER_ROLES.AGENT, USER_ROLES.ADMIN], // Only internal user roles
+    required: true
   },
   status: {
     type: String,
@@ -32,18 +33,45 @@ const userSchema = new mongoose.Schema({
     default: USER_STATUS.ACTIVE
   },
   department: {
-    type: String,
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department',
     required: function() {
       return this.role === USER_ROLES.AGENT;
     }
   },
   skills: [{
-    type: String,
-    trim: true
+    name: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    level: {
+      type: String,
+      enum: ['beginner', 'intermediate', 'expert'],
+      default: 'beginner'
+    },
+    verified: {
+      type: Boolean,
+      default: false
+    }
   }],
   shift: {
-    startTime: String,
-    endTime: String,
+    startTime: {
+      type: String,
+      required: function() {
+        return this.role === USER_ROLES.AGENT;
+      }
+    },
+    endTime: {
+      type: String,
+      required: function() {
+        return this.role === USER_ROLES.AGENT;
+      }
+    },
+    timeZone: {
+      type: String,
+      default: 'UTC'
+    },
     days: [{
       type: String,
       enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -56,23 +84,31 @@ const userSchema = new mongoose.Schema({
       desktop: { type: Boolean, default: true }
     },
     language: { type: String, default: 'en' },
-    timezone: { type: String, default: 'UTC' }
+    theme: { type: String, default: 'light' }
+  },
+  performance: {
+    ticketsResolved: { type: Number, default: 0 },
+    averageResponseTime: { type: Number, default: 0 }, // in minutes
+    customerSatisfactionScore: { type: Number, default: 0 },
+    lastUpdated: Date
   },
   lastLogin: Date,
   lastActive: Date,
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
+  sessionToken: String,
+  passwordResetToken: String,
+  passwordResetExpires: Date
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
+
+// Indexes
+userSchema.index({ email: 1 });
+userSchema.index({ role: 1, status: 1 });
+userSchema.index({ department: 1, role: 1 });
+userSchema.index({ 'shift.days': 1 });
+userSchema.index({ sessionToken: 1 });
 
 // Virtual for full name
 userSchema.virtual('fullName').get(function() {
@@ -94,21 +130,34 @@ userSchema.pre('save', async function(next) {
 
 // Method to compare passwords
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
+  const user = await this.constructor.findById(this._id).select('+password');
+  return bcrypt.compare(candidatePassword, user.password);
 };
 
 // Method to get public profile
 userSchema.methods.getPublicProfile = function() {
   const userObject = this.toObject();
   delete userObject.password;
+  delete userObject.sessionToken;
+  delete userObject.passwordResetToken;
+  delete userObject.passwordResetExpires;
   delete userObject.__v;
   return userObject;
 };
 
-// Indexes
-userSchema.index({ email: 1 });
-userSchema.index({ role: 1, status: 1 });
-userSchema.index({ 'shift.days': 1 });
+// Method to check if user is available
+userSchema.methods.isAvailable = function() {
+  if (this.role !== USER_ROLES.AGENT) return false;
+  
+  const now = new Date();
+  const currentDay = now.toLocaleLowerCase();
+  const currentTime = now.toLocaleTimeString('en-US', { hour12: false });
+  
+  return this.shift.days.includes(currentDay) &&
+         currentTime >= this.shift.startTime &&
+         currentTime <= this.shift.endTime &&
+         this.status === USER_STATUS.ACTIVE;
+};
 
 const User = mongoose.model('User', userSchema);
 

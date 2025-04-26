@@ -1,287 +1,317 @@
 const Ticket = require('../models/Ticket');
 const User = require('../models/User');
-const Order = require('../models/Order');
-const logger = require('../utils/logger');
-const { TICKET_STATUS, TICKET_PRIORITY, USER_ROLES } = require('../../../shared/constants');
+const Customer = require('../models/Customer');
+const { USER_ROLES, TICKET_STATUS, TICKET_PRIORITY } = require('../../../shared/constants');
 
-const ticketController = {
-  async getTickets(req, res) {
-    try {
-      const { status, priority, type, department, assignedTo, customer } = req.query;
-      const query = {};
-
-      if (status) query.status = status;
-      if (priority) query.priority = priority;
-      if (type) query.type = type;
-      if (department) query.department = department;
-      if (assignedTo) query.assignedAgent = assignedTo;
-      if (customer) query.customer = customer;
-
-      const tickets = await Ticket.find(query)
-        .populate('customer', 'name email')
-        .populate('assignedAgent', 'name email')
-        .populate('department', 'name')
-        .sort({ createdAt: -1 });
-
-      res.json(tickets);
-    } catch (error) {
-      logger.error('Error fetching tickets:', error);
-      res.status(500).json({ message: 'Error fetching tickets' });
+// Get all tickets with pagination and filters
+exports.getTickets = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    
+    const query = {};
+    if (req.query.status) query.status = req.query.status;
+    if (req.query.priority) query.priority = req.query.priority;
+    
+    // If agent, only show assigned tickets
+    if (req.user.role === USER_ROLES.AGENT) {
+      query.assignedAgent = req.user._id;
     }
-  },
-
-  async getTicketById(req, res) {
-    try {
-      const ticket = await Ticket.findById(req.params.id)
-        .populate('customer', 'name email phone')
-        .populate('assignedAgent', 'name email')
-        .populate('department', 'name')
-        .populate('comments.user', 'name email');
-
-      if (!ticket) {
-        return res.status(404).json({ message: 'Ticket not found' });
-      }
-
-      // If ticket is related to an order, fetch order details
-      if (ticket.type === 'order' && ticket.orderId) {
-        const order = await Order.findById(ticket.orderId);
-        ticket.orderDetails = order;
-      }
-
-      // Get additional customer info
-      if (ticket.customer) {
-        const customerInfo = await User.findById(ticket.customer)
-          .select('createdAt orderCount lastActive preferences');
-        if (customerInfo) {
-          ticket.customerInfo = {
-            joinDate: customerInfo.createdAt,
-            orderCount: customerInfo.orderCount || 0,
-            lastActive: customerInfo.lastActive,
-            preferences: customerInfo.preferences
-          };
-        }
-      }
-
-      res.json(ticket);
-    } catch (error) {
-      logger.error('Error fetching ticket:', error);
-      res.status(500).json({ message: 'Error fetching ticket' });
-    }
-  },
-
-  async createTicket(req, res) {
-    try {
-      const {
-        subject,
-        description,
-        type,
-        priority,
-        category,
-        customer,
-        department,
-        orderId,
-        profileId,
-        customFields,
-      } = req.body;
-
-      // Verify customer exists and is a customer
-      if (customer) {
-        const customerUser = await User.findOne({ _id: customer, role: USER_ROLES.CUSTOMER });
-        if (!customerUser) {
-          return res.status(400).json({ message: 'Invalid customer ID' });
-        }
-      }
-
-      const ticket = new Ticket({
-        subject,
-        description,
-        type,
-        priority,
-        category,
-        customer,
-        department,
-        orderId,
-        profileId,
-        customFields,
-        status: TICKET_STATUS.OPEN,
-        createdBy: req.user._id,
-      });
-
-      await ticket.save();
-
-      // If ticket is related to an order, update order status
-      if (type === 'order' && orderId) {
-        await Order.findByIdAndUpdate(orderId, {
-          $push: { tickets: ticket._id },
-        });
-      }
-
-      // Populate customer and agent info before sending response
-      await ticket.populate('customer', 'name email');
-      await ticket.populate('assignedAgent', 'name email');
-
-      res.status(201).json(ticket);
-    } catch (error) {
-      logger.error('Error creating ticket:', error);
-      res.status(500).json({ message: 'Error creating ticket' });
-    }
-  },
-
-  async updateTicket(req, res) {
-    try {
-      const { status, priority, assignedAgent, department, customFields } = req.body;
-      const ticket = await Ticket.findById(req.params.id);
-
-      if (!ticket) {
-        return res.status(404).json({ message: 'Ticket not found' });
-      }
-
-      // Update ticket fields
-      if (status) ticket.status = status;
-      if (priority) ticket.priority = priority;
-      if (assignedAgent) ticket.assignedAgent = assignedAgent;
-      if (department) ticket.department = department;
-      if (customFields) ticket.customFields = { ...ticket.customFields, ...customFields };
-
-      // Add to history
-      ticket.history.push({
-        action: 'update',
-        field: Object.keys(req.body).join(', '),
-        value: req.body,
-        user: req.user._id,
-        timestamp: new Date(),
-      });
-
-      await ticket.save();
-      res.json(ticket);
-    } catch (error) {
-      logger.error('Error updating ticket:', error);
-      res.status(500).json({ message: 'Error updating ticket' });
-    }
-  },
-
-  async deleteTicket(req, res) {
-    try {
-      const ticket = await Ticket.findById(req.params.id);
-      if (!ticket) {
-        return res.status(404).json({ message: 'Ticket not found' });
-      }
-
-      // If ticket is related to an order, remove reference
-      if (ticket.type === 'order' && ticket.orderId) {
-        await Order.findByIdAndUpdate(ticket.orderId, {
-          $pull: { tickets: ticket._id },
-        });
-      }
-
-      await ticket.remove();
-      res.json({ message: 'Ticket deleted successfully' });
-    } catch (error) {
-      logger.error('Error deleting ticket:', error);
-      res.status(500).json({ message: 'Error deleting ticket' });
-    }
-  },
-
-  async addComment(req, res) {
-    try {
-      const { content, type } = req.body;
-      const ticket = await Ticket.findById(req.params.id);
-
-      if (!ticket) {
-        return res.status(404).json({ message: 'Ticket not found' });
-      }
-
-      const comment = {
-        content,
-        type,
-        user: req.user._id,
-        createdAt: new Date(),
-      };
-
-      ticket.comments.push(comment);
-      await ticket.save();
-
-      res.status(201).json(comment);
-    } catch (error) {
-      logger.error('Error adding comment:', error);
-      res.status(500).json({ message: 'Error adding comment' });
-    }
-  },
-
-  async getTicketHistory(req, res) {
-    try {
-      const ticket = await Ticket.findById(req.params.id);
-      if (!ticket) {
-        return res.status(404).json({ message: 'Ticket not found' });
-      }
-
-      res.json(ticket.history);
-    } catch (error) {
-      logger.error('Error fetching ticket history:', error);
-      res.status(500).json({ message: 'Error fetching ticket history' });
-    }
-  },
-
-  async getTicketAttachments(req, res) {
-    try {
-      const ticket = await Ticket.findById(req.params.id);
-      if (!ticket) {
-        return res.status(404).json({ message: 'Ticket not found' });
-      }
-
-      res.json(ticket.attachments);
-    } catch (error) {
-      logger.error('Error fetching ticket attachments:', error);
-      res.status(500).json({ message: 'Error fetching ticket attachments' });
-    }
-  },
-
-  async uploadAttachment(req, res) {
-    try {
-      const ticket = await Ticket.findById(req.params.id);
-      if (!ticket) {
-        return res.status(404).json({ message: 'Ticket not found' });
-      }
-
-      // Handle file upload logic here
-      // This would typically involve using multer or similar middleware
-      // For now, we'll just add a placeholder
-      const attachment = {
-        filename: req.file.originalname,
-        path: req.file.path,
-        type: req.file.mimetype,
-        size: req.file.size,
-        uploadedBy: req.user._id,
-        uploadedAt: new Date(),
-      };
-
-      ticket.attachments.push(attachment);
-      await ticket.save();
-
-      res.status(201).json(attachment);
-    } catch (error) {
-      logger.error('Error uploading attachment:', error);
-      res.status(500).json({ message: 'Error uploading attachment' });
-    }
-  },
-
-  async getTicketMetrics(req, res) {
-    try {
-      const metrics = await Ticket.aggregate([
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 },
-          },
-        },
-      ]);
-
-      res.json(metrics);
-    } catch (error) {
-      logger.error('Error fetching ticket metrics:', error);
-      res.status(500).json({ message: 'Error fetching ticket metrics' });
-    }
-  },
+    
+    const tickets = await Ticket.find(query)
+      .populate('customer', 'name email phone')
+      .populate('assignedAgent', 'name email department')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+    
+    const total = await Ticket.countDocuments(query);
+    
+    res.json({
+      tickets,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 };
 
-module.exports = ticketController; 
+// Get ticket by ID
+exports.getTicketById = async (req, res) => {
+  try {
+    const ticket = await Ticket.findById(req.params.id)
+      .populate('customer', 'name email phone customerType totalTickets')
+      .populate('assignedAgent', 'name email department skills')
+      .populate('comments.user', 'name role');
+    
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    res.json(ticket);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Create new ticket
+exports.createTicket = async (req, res) => {
+  try {
+    const { subject, description, priority, customerId } = req.body;
+    
+    // Verify customer exists
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    
+    // Find available agent based on skills and workload
+    const availableAgent = await User.findOne({
+      role: USER_ROLES.AGENT,
+      status: 'active',
+      'skills.name': { $in: req.body.requiredSkills || [] }
+    }).sort({ 'performance.ticketsResolved': -1 });
+    
+    const ticket = new Ticket({
+      subject,
+      description,
+      customer: customer._id,
+      priority: priority || TICKET_PRIORITY.MEDIUM,
+      status: TICKET_STATUS.OPEN,
+      assignedAgent: availableAgent?._id
+    });
+    
+    await ticket.save();
+    
+    // Update customer's ticket count
+    customer.totalTickets += 1;
+    await customer.save();
+    
+    // Populate response data
+    await ticket.populate('customer', 'name email phone');
+    if (availableAgent) {
+      await ticket.populate('assignedAgent', 'name email department');
+    }
+    
+    res.status(201).json(ticket);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Update ticket
+exports.updateTicket = async (req, res) => {
+  try {
+    const updates = {};
+    const allowedUpdates = ['status', 'priority', 'assignedAgent', 'subject', 'description'];
+    
+    Object.keys(req.body).forEach(key => {
+      if (allowedUpdates.includes(key)) {
+        updates[key] = req.body[key];
+      }
+    });
+    
+    const ticket = await Ticket.findById(req.params.id);
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    // Add to history if status or agent changes
+    if (updates.status && updates.status !== ticket.status) {
+      ticket.history.push({
+        field: 'status',
+        oldValue: ticket.status,
+        newValue: updates.status,
+        updatedBy: req.user._id
+      });
+    }
+    
+    if (updates.assignedAgent && updates.assignedAgent !== ticket.assignedAgent?.toString()) {
+      ticket.history.push({
+        field: 'assignedAgent',
+        oldValue: ticket.assignedAgent,
+        newValue: updates.assignedAgent,
+        updatedBy: req.user._id
+      });
+    }
+    
+    Object.assign(ticket, updates);
+    await ticket.save();
+    
+    await ticket.populate('customer', 'name email phone');
+    await ticket.populate('assignedAgent', 'name email department');
+    
+    res.json(ticket);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Delete ticket
+exports.deleteTicket = async (req, res) => {
+  try {
+    const ticket = await Ticket.findById(req.params.id);
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    // Only admins can delete tickets
+    if (req.user.role !== USER_ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Only admins can delete tickets' });
+    }
+    
+    await ticket.remove();
+    
+    // Update customer's ticket count
+    const customer = await Customer.findById(ticket.customer);
+    if (customer) {
+      customer.totalTickets -= 1;
+      await customer.save();
+    }
+    
+    res.json({ message: 'Ticket deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Add comment to ticket
+exports.addComment = async (req, res) => {
+  try {
+    const ticket = await Ticket.findById(req.params.id);
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    ticket.comments.push({
+      content: req.body.content,
+      user: req.user._id,
+      isInternal: req.body.isInternal || false
+    });
+    
+    await ticket.save();
+    await ticket.populate('comments.user', 'name role');
+    
+    res.json(ticket.comments[ticket.comments.length - 1]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Get ticket history
+exports.getTicketHistory = async (req, res) => {
+  try {
+    const ticket = await Ticket.findById(req.params.id)
+      .populate('history.updatedBy', 'name role');
+    
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    res.json(ticket.history);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Get ticket metrics
+exports.getTicketMetrics = async (req, res) => {
+  try {
+    const metrics = await Ticket.aggregate([
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          open: {
+            $sum: {
+              $cond: [{ $eq: ['$status', TICKET_STATUS.OPEN] }, 1, 0]
+            }
+          },
+          inProgress: {
+            $sum: {
+              $cond: [{ $eq: ['$status', TICKET_STATUS.IN_PROGRESS] }, 1, 0]
+            }
+          },
+          resolved: {
+            $sum: {
+              $cond: [{ $eq: ['$status', TICKET_STATUS.RESOLVED] }, 1, 0]
+            }
+          },
+          avgResolutionTime: { $avg: '$resolutionTime' },
+          highPriority: {
+            $sum: {
+              $cond: [{ $eq: ['$priority', TICKET_PRIORITY.HIGH] }, 1, 0]
+            }
+          }
+        }
+      }
+    ]);
+    
+    res.json(metrics[0] || {
+      total: 0,
+      open: 0,
+      inProgress: 0,
+      resolved: 0,
+      avgResolutionTime: 0,
+      highPriority: 0
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Get ticket attachments
+exports.getTicketAttachments = async (req, res) => {
+  try {
+    const ticket = await Ticket.findById(req.params.id)
+      .populate('attachments.uploadedBy', 'name');
+    
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    res.json(ticket.attachments || []);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Upload attachment to ticket
+exports.uploadAttachment = async (req, res) => {
+  try {
+    const ticket = await Ticket.findById(req.params.id);
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    // Note: This assumes you have multer or similar middleware configured
+    // to handle the file upload and it's available in req.file
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    const attachment = {
+      filename: req.file.originalname,
+      path: req.file.path,
+      type: req.file.mimetype,
+      size: req.file.size,
+      uploadedBy: req.user._id,
+      uploadedAt: new Date()
+    };
+    
+    ticket.attachments.push(attachment);
+    await ticket.save();
+    
+    // Populate the uploadedBy field before sending response
+    const populatedTicket = await Ticket.findById(ticket._id)
+      .populate('attachments.uploadedBy', 'name');
+    const newAttachment = populatedTicket.attachments[populatedTicket.attachments.length - 1];
+    
+    res.status(201).json(newAttachment);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}; 
