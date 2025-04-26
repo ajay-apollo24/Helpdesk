@@ -1,9 +1,8 @@
 const Ticket = require('../models/Ticket');
 const User = require('../models/User');
 const Order = require('../models/Order');
-const Customer = require('../models/Customer');
 const logger = require('../utils/logger');
-const { TICKET_STATUS, TICKET_PRIORITY } = require('../../../shared/constants');
+const { TICKET_STATUS, TICKET_PRIORITY, USER_ROLES } = require('../../../shared/constants');
 
 const ticketController = {
   async getTickets(req, res) {
@@ -34,7 +33,7 @@ const ticketController = {
   async getTicketById(req, res) {
     try {
       const ticket = await Ticket.findById(req.params.id)
-        .populate('customer', 'name email phone orderCount createdAt')
+        .populate('customer', 'name email phone')
         .populate('assignedAgent', 'name email')
         .populate('department', 'name')
         .populate('comments.user', 'name email');
@@ -47,6 +46,20 @@ const ticketController = {
       if (ticket.type === 'order' && ticket.orderId) {
         const order = await Order.findById(ticket.orderId);
         ticket.orderDetails = order;
+      }
+
+      // Get additional customer info
+      if (ticket.customer) {
+        const customerInfo = await User.findById(ticket.customer)
+          .select('createdAt orderCount lastActive preferences');
+        if (customerInfo) {
+          ticket.customerInfo = {
+            joinDate: customerInfo.createdAt,
+            orderCount: customerInfo.orderCount || 0,
+            lastActive: customerInfo.lastActive,
+            preferences: customerInfo.preferences
+          };
+        }
       }
 
       res.json(ticket);
@@ -71,6 +84,14 @@ const ticketController = {
         customFields,
       } = req.body;
 
+      // Verify customer exists and is a customer
+      if (customer) {
+        const customerUser = await User.findOne({ _id: customer, role: USER_ROLES.CUSTOMER });
+        if (!customerUser) {
+          return res.status(400).json({ message: 'Invalid customer ID' });
+        }
+      }
+
       const ticket = new Ticket({
         subject,
         description,
@@ -94,6 +115,10 @@ const ticketController = {
           $push: { tickets: ticket._id },
         });
       }
+
+      // Populate customer and agent info before sending response
+      await ticket.populate('customer', 'name email');
+      await ticket.populate('assignedAgent', 'name email');
 
       res.status(201).json(ticket);
     } catch (error) {

@@ -19,16 +19,48 @@ class ApiService {
     const defaultOptions = {
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
       credentials: 'include',
+      mode: 'cors',
+    };
+
+    const finalOptions = {
+      ...defaultOptions,
+      ...options,
+      headers: {
+        ...defaultOptions.headers,
+        ...options.headers,
+      },
     };
 
     try {
-      logger.debug(`Making API request to ${url}`, { options });
-      const response = await fetch(url, { ...defaultOptions, ...options });
+      logger.debug(`Making API request to ${url}`, { options: finalOptions });
+      
+      // First check if the server is reachable
+      const response = await fetch(url, finalOptions);
+      
+      // Log the response headers for debugging
+      logger.debug('Response headers:', {
+        headers: Object.fromEntries(response.headers.entries()),
+        status: response.status,
+        statusText: response.statusText
+      });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        // Try to parse error response as JSON
+        const contentType = response.headers.get('content-type');
+        let errorData;
+        
+        if (contentType && contentType.includes('application/json')) {
+          errorData = await response.json().catch(() => ({}));
+        } else {
+          // If not JSON, get text content for debugging
+          const textContent = await response.text();
+          logger.error('Non-JSON response received:', { content: textContent });
+          errorData = { message: 'Invalid server response' };
+        }
+
         throw new ApiError(
           errorData.message || 'API request failed',
           response.status,
@@ -40,8 +72,19 @@ class ApiService {
       logger.debug(`API response from ${url}`, { data });
       return data;
     } catch (error) {
-      logger.error(`API request failed: ${url}`, error);
-      throw error;
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      logger.error(`API request failed: ${url}`, {
+        error: {
+          message: error.message,
+          name: error.name,
+          stack: error.stack
+        }
+      });
+      throw new ApiError('Failed to connect to server', 503, {
+        originalError: error.message
+      });
     }
   }
 

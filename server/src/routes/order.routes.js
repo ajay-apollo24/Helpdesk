@@ -1,34 +1,34 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/order.controller');
-const auth = require('../middleware/auth');
+const { isAuthenticated } = require('../middleware/auth.middleware');
 const { validateOrder } = require('../middleware/validation');
 
 // Get all orders with filters
-router.get('/', auth, orderController.getOrders);
+router.get('/', isAuthenticated, orderController.getOrders);
 
 // Get order by ID
-router.get('/:id', auth, orderController.getOrderById);
+router.get('/:id', isAuthenticated, orderController.getOrderById);
 
 // Create new order
-router.post('/', auth, validateOrder, orderController.createOrder);
+router.post('/', isAuthenticated, validateOrder, orderController.createOrder);
 
 // Update order
-router.patch('/:id', auth, orderController.updateOrder);
+router.patch('/:id', isAuthenticated, orderController.updateOrder);
 
 // Delete order
-router.delete('/:id', auth, orderController.deleteOrder);
+router.delete('/:id', isAuthenticated, orderController.deleteOrder);
 
 // Get order history
-router.get('/:id/history', auth, orderController.getOrderHistory);
+router.get('/:id/history', isAuthenticated, orderController.getOrderHistory);
 
 // Add tracking information
-router.post('/:id/tracking', auth, orderController.addTracking);
+router.post('/:id/tracking', isAuthenticated, orderController.addTracking);
 
 // Mark order as delivered
-router.post('/:id/deliver', auth, orderController.markAsDelivered);
+router.post('/:id/deliver', isAuthenticated, orderController.markAsDelivered);
 
 // Get order metrics
-router.get('/metrics', auth, orderController.getOrderMetrics);
+router.get('/metrics', isAuthenticated, orderController.getOrderMetrics);
 
 module.exports = router; 
