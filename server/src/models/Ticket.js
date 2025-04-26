@@ -1,197 +1,202 @@
 const mongoose = require('mongoose');
 const { TICKET_STATUS, TICKET_PRIORITY } = require('../../../shared/constants');
 
-const ticketSchema = new mongoose.Schema({
-  subject: {
-    type: String,
-    required: true,
-    trim: true,
-    index: true
-  },
-  description: {
-    type: String,
-    required: true
-  },
-  status: {
-    type: String,
-    enum: Object.values(TICKET_STATUS),
-    default: TICKET_STATUS.OPEN,
-    index: true
-  },
-  priority: {
-    type: String,
-    enum: Object.values(TICKET_PRIORITY),
-    default: TICKET_PRIORITY.MEDIUM,
-    index: true
-  },
-  category: {
-    type: String,
-    required: true,
-    index: true
-  },
-  tags: [{
-    type: String,
-    trim: true
-  }],
-  attachments: [{
-    filename: String,
-    path: String,
-    size: Number,
-    mimetype: String,
-    uploadedAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
-  customer: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    index: true
-  },
-  assignedAgent: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    index: true
-  },
-  department: {
-    type: String,
-    required: true,
-    index: true
-  },
-  comments: [{
-    user: {
+const ticketSchema = new mongoose.Schema(
+  {
+    subject: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    description: {
+      type: String,
+      required: true,
+    },
+    type: {
+      type: String,
+      required: true,
+      enum: ['order', 'profile', 'general', 'technical', 'billing'],
+    },
+    status: {
+      type: String,
+      required: true,
+      enum: Object.values(TICKET_STATUS),
+      default: TICKET_STATUS.OPEN,
+    },
+    priority: {
+      type: String,
+      required: true,
+      enum: Object.values(TICKET_PRIORITY),
+      default: TICKET_PRIORITY.MEDIUM,
+    },
+    category: {
+      type: String,
+      required: true,
+    },
+    customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true
+      required: true,
     },
-    content: {
-      type: String,
-      required: true
+    assignedAgent: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
     },
-    attachments: [{
-      filename: String,
-      path: String,
-      size: Number,
-      mimetype: String
-    }],
-    createdAt: {
-      type: Date,
-      default: Date.now
+    department: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Department',
+    },
+    // Type-specific fields
+    orderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Order',
+      // Only required for order-type tickets
+      required: function() {
+        return this.type === 'order';
+      },
+    },
+    profileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'UserProfile',
+      // Only required for profile-type tickets
+      required: function() {
+        return this.type === 'profile';
+      },
+    },
+    // Custom fields for different ticket types
+    customFields: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    // Common fields for all tickets
+    comments: [
+      {
+        content: String,
+        type: {
+          type: String,
+          enum: ['agent', 'customer', 'system'],
+          default: 'agent',
+        },
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    attachments: [
+      {
+        filename: String,
+        path: String,
+        type: String,
+        size: Number,
+        uploadedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        uploadedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    history: [
+      {
+        action: String,
+        field: String,
+        value: mongoose.Schema.Types.Mixed,
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        timestamp: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    tags: [String],
+    dueDate: Date,
+    resolutionTime: Date,
+    satisfactionRating: {
+      type: Number,
+      min: 1,
+      max: 5,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
     },
     updatedAt: {
       type: Date,
-      default: Date.now
-    }
-  }],
-  history: [{
-    action: {
-      type: String,
-      required: true
+      default: Date.now,
     },
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
-    },
-    details: {
-      type: mongoose.Schema.Types.Mixed
-    },
-    timestamp: {
-      type: Date,
-      default: Date.now
-    }
-  }],
-  escalationLevel: {
-    type: Number,
-    default: 0
   },
-  lastEscalationTime: Date,
-  dueDate: Date,
-  resolutionTime: Number,
-  satisfactionRating: {
-    rating: Number,
-    comment: String,
-    submittedAt: Date
-  },
-  aiSuggestions: {
-    category: String,
-    priority: String,
-    confidence: Number,
-    generatedAt: Date
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+  {
+    timestamps: true,
   }
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
-});
+);
+
+// Indexes for better query performance
+ticketSchema.index({ customer: 1, status: 1 });
+ticketSchema.index({ assignedAgent: 1, status: 1 });
+ticketSchema.index({ department: 1, status: 1 });
+ticketSchema.index({ type: 1, status: 1 });
+ticketSchema.index({ orderId: 1 });
+ticketSchema.index({ profileId: 1 });
 
 // Virtual for ticket age
 ticketSchema.virtual('age').get(function() {
   return Math.floor((Date.now() - this.createdAt) / (1000 * 60 * 60 * 24));
 });
 
-// Virtual for isOverdue
+// Virtual for overdue status
 ticketSchema.virtual('isOverdue').get(function() {
   if (!this.dueDate) return false;
   return Date.now() > this.dueDate;
 });
 
-// Method to add comment
-ticketSchema.methods.addComment = async function(userId, content, attachments = []) {
+// Method to add a comment
+ticketSchema.methods.addComment = async function(content, type, userId) {
   this.comments.push({
-    user: userId,
     content,
-    attachments
+    type,
+    user: userId,
+    createdAt: new Date(),
   });
-  await this.save();
+  return this.save();
 };
 
 // Method to update status
 ticketSchema.methods.updateStatus = async function(newStatus, userId) {
-  const oldStatus = this.status;
   this.status = newStatus;
   this.history.push({
-    action: 'status_change',
+    action: 'status_update',
+    field: 'status',
+    value: newStatus,
     user: userId,
-    details: {
-      from: oldStatus,
-      to: newStatus
-    }
+    timestamp: new Date(),
   });
-  await this.save();
+  return this.save();
 };
 
 // Method to assign agent
 ticketSchema.methods.assignAgent = async function(agentId, userId) {
-  const oldAgent = this.assignedAgent;
   this.assignedAgent = agentId;
   this.history.push({
     action: 'agent_assignment',
+    field: 'assignedAgent',
+    value: agentId,
     user: userId,
-    details: {
-      from: oldAgent,
-      to: agentId
-    }
+    timestamp: new Date(),
   });
-  await this.save();
+  return this.save();
 };
-
-// Indexes
-ticketSchema.index({ customer: 1, status: 1 });
-ticketSchema.index({ assignedAgent: 1, status: 1 });
-ticketSchema.index({ department: 1, status: 1 });
-ticketSchema.index({ createdAt: -1 });
-ticketSchema.index({ dueDate: 1 });
-ticketSchema.index({ 'tags': 1 });
 
 const Ticket = mongoose.model('Ticket', ticketSchema);
 

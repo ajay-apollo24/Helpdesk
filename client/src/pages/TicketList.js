@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -16,8 +16,16 @@ import {
   TextField,
   MenuItem,
   Grid,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
-import { Add as AddIcon } from '@mui/icons-material';
+import {
+  Add as AddIcon,
+  FilterList as FilterListIcon,
+  Sort as SortIcon,
+} from '@mui/icons-material';
+import SLAStatus from '../components/SLAStatus';
+import PriorityIndicator from '../components/PriorityIndicator';
 
 function TicketList() {
   const navigate = useNavigate();
@@ -25,29 +33,25 @@ function TicketList() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // This will be replaced with actual data from the API
-  const tickets = [
-    {
-      id: '123',
-      subject: 'Cannot access email',
-      status: 'open',
-      priority: 'high',
-      customer: 'John Doe',
-      createdAt: '2024-03-20',
-      assignedTo: 'Jane Smith',
-    },
-    {
-      id: '124',
-      subject: 'Printer not working',
-      status: 'in_progress',
-      priority: 'medium',
-      customer: 'Alice Johnson',
-      createdAt: '2024-03-19',
-      assignedTo: 'Bob Wilson',
-    },
-    // Add more sample tickets here
-  ];
+  useEffect(() => {
+    fetchTickets();
+  }, [page, rowsPerPage, filterStatus, searchQuery]);
+
+  const fetchTickets = async () => {
+    try {
+      // This will be replaced with actual API call
+      const response = await fetch('/api/tickets');
+      const data = await response.json();
+      setTickets(data);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching tickets:', error);
+      setLoading(false);
+    }
+  };
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -66,15 +70,6 @@ function TicketList() {
       closed: 'default',
     };
     return colors[status] || 'default';
-  };
-
-  const getPriorityColor = (priority) => {
-    const colors = {
-      high: 'error',
-      medium: 'warning',
-      low: 'success',
-    };
-    return colors[priority] || 'default';
   };
 
   return (
@@ -116,6 +111,20 @@ function TicketList() {
             <MenuItem value="closed">Closed</MenuItem>
           </TextField>
         </Grid>
+        <Grid item xs={12} sm={6} md={4}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="Filter">
+              <IconButton>
+                <FilterListIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Sort">
+              <IconButton>
+                <SortIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </Grid>
       </Grid>
 
       <TableContainer component={Paper}>
@@ -126,6 +135,7 @@ function TicketList() {
               <TableCell>Subject</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Priority</TableCell>
+              <TableCell>SLA</TableCell>
               <TableCell>Customer</TableCell>
               <TableCell>Assigned To</TableCell>
               <TableCell>Created</TableCell>
@@ -151,15 +161,22 @@ function TicketList() {
                     />
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={ticket.priority}
-                      color={getPriorityColor(ticket.priority)}
-                      size="small"
+                    <PriorityIndicator
+                      priority={ticket.priority}
+                      score={ticket.priorityScore}
                     />
                   </TableCell>
-                  <TableCell>{ticket.customer}</TableCell>
-                  <TableCell>{ticket.assignedTo}</TableCell>
-                  <TableCell>{ticket.createdAt}</TableCell>
+                  <TableCell>
+                    <SLAStatus
+                      responseTime={ticket.sla.responseTime}
+                      resolutionTime={ticket.sla.resolutionTime}
+                    />
+                  </TableCell>
+                  <TableCell>{ticket.customer.name}</TableCell>
+                  <TableCell>{ticket.assignedAgent?.name || 'Unassigned'}</TableCell>
+                  <TableCell>
+                    {new Date(ticket.createdAt).toLocaleDateString()}
+                  </TableCell>
                 </TableRow>
               ))}
           </TableBody>
