@@ -95,3 +95,8 @@ A modern web-based helpdesk platform with AI-powered features for efficient tick
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details. 
+
+## credentials
+
+Email: admin@helpdesk.com
+Password: admin123!

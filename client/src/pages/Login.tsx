@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext.tsx';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { login, error, clearError, isLoading } = useAuth();
+  const { login, error, clearError, isLoading, user } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [validationError, setValidationError] = useState('');
+
+  // Redirect to dashboard if already logged in
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard');
+    }
+  }, [user, navigate]);
+
 
   const validateForm = () => {
     if (!email) {
@@ -34,7 +42,7 @@ const Login: React.FC = () => {
 
     try {
       await login({ email, password });
-      navigate('/profile');
+      // Redirect handled by useEffect
     } catch (err) {
       // Error is handled by the auth context
       console.error('Login failed:', err);
@@ -118,4 +126,4 @@ const Login: React.FC = () => {
   );
 };
 
-export default Login; 
+export default Login;

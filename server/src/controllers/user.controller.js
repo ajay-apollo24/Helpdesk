@@ -1,20 +1,50 @@
 const User = require('../models/User');
 const { USER_ROLES } = require('../../../shared/constants');
+const logger = require('../utils/logger');
 
 // Get current user
 exports.getCurrentUser = async (req, res) => {
   try {
+    logger.debug('getCurrentUser - starting', {
+      userId: req.user?._id,
+      hasUser: !!req.user
+    });
+
     // req.user is already populated by isAuthenticated middleware
     const user = await User.findById(req.user._id)
-      .populate('department', 'name')
+      .populate({
+        path: 'department',
+        select: 'name description isActive',
+        options: { lean: true }
+      })
       .select('-password -sessionToken -passwordResetToken -passwordResetExpires');
     
+    logger.debug('getCurrentUser - after database query', {
+      userFound: !!user,
+      hasDepartment: !!user?.department,
+      userId: req.user._id
+    });
+
     if (!user) {
+      logger.warn('getCurrentUser - user not found', { userId: req.user._id });
       return res.status(404).json({ error: 'User not found' });
     }
+
+    logger.debug('getCurrentUser - preparing response', {
+      userId: user._id,
+      email: user.email,
+      role: user.role,
+      departmentId: user.department?._id
+    });
     
-    res.json(user.getPublicProfile());
+    const publicProfile = user.getPublicProfile();
+    res.json(publicProfile);
   } catch (error) {
+    logger.error('getCurrentUser error', {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user?._id
+    });
     res.status(500).json({ error: error.message });
   }
 };

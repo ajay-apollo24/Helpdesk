@@ -2,58 +2,73 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const logger = require('../utils/logger');
 const { USER_ROLES, USER_STATUS } = require('../../../shared/constants');
+const mongoose = require('mongoose');
 
 // Register a new user
 const register = async (req, res) => {
   try {
-    const { email, password, name, role } = req.body;
+    logger.info('Starting user registration process', { email: req.body.email });
+    const { email } = req.body;
 
-    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      logger.warn('Registration failed - Email already exists', { email });
+      return res.status(400).json({ message: 'Email already registered' });
     }
 
-    // Create new user
-    const user = new User({
-      email,
-      password,
-      name,
-      role,
-      status: USER_STATUS.ACTIVE
-    });
-
+    const user = new User(req.body);
     await user.save();
     
     // Start session
     req.session.userId = user._id;
     await req.session.save();
+    logger.info('User registered successfully', { userId: user._id, email });
 
-    res.status(201).json({ 
-      message: 'User registered successfully', 
-      user: user.getPublicProfile(),
+    res.status(201).json({
+      message: 'Registration successful',
+      user: user.toJSON(),
       sessionId: req.sessionID
     });
   } catch (error) {
-    logger.error('Registration error:', error);
-    res.status(500).json({ message: 'Error registering user' });
+    logger.error('Registration error', { error: error.message, stack: error.stack });
+    res.status(500).json({ message: 'Error during registration' });
   }
 };
 
 // Login user
 const login = async (req, res) => {
   try {
+    logger.info('Login attempt details', { 
+      email: req.body.email,
+      headers: req.headers,
+      cookies: req.cookies
+    });
+
     const { email, password } = req.body;
 
-    // Find user and check status
+    // Find user with detailed logging
     const user = await User.findOne({ email }).select('+password');
-    if (!user || user.status !== USER_STATUS.ACTIVE) {
+    if (!user) {
+      logger.warn('Login failed - User not found', { email });
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+    logger.info('User found during login', { 
+      userId: user._id,
+      email: user.email,
+      role: user.role,
+      status: user.status
+    });
 
-    // Verify password
+    // Check password with detailed logging
     const isMatch = await user.comparePassword(password);
+    logger.info('Password comparison result', { 
+      email,
+      isMatch,
+      passwordProvided: !!password
+    });
+    
     if (!isMatch) {
+      logger.warn('Login failed - Invalid password', { email });
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
@@ -61,17 +76,34 @@ const login = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    // Start session
+    // Set up session with detailed logging
     req.session.userId = user._id;
     await req.session.save();
+    
+    logger.info('Login successful - Full details', { 
+      userId: user._id,
+      email,
+      sessionId: req.sessionID,
+      sessionData: req.session,
+      cookies: req.cookies,
+      headers: {
+        'set-cookie': res.getHeader('set-cookie')
+      }
+    });
 
-    res.json({ 
-      message: 'Login successful', 
-      user: user.getPublicProfile(),
+    // Send response with session cookie
+    res.json({
+      message: 'Login successful',
+      user: user.toJSON(),
       sessionId: req.sessionID
     });
   } catch (error) {
-    logger.error('Login error:', error);
+    logger.error('Login error - Full details', { 
+      error: error.message, 
+      stack: error.stack,
+      body: req.body,
+      headers: req.headers
+    });
     res.status(500).json({ message: 'Error during login' });
   }
 };
@@ -79,17 +111,21 @@ const login = async (req, res) => {
 // Logout user
 const logout = async (req, res) => {
   try {
-    await new Promise((resolve, reject) => {
-      req.session.destroy((err) => {
-        if (err) reject(err);
-        resolve();
-      });
-    });
+    logger.info('Logout attempt', { userId: req.session.userId });
     
-    res.clearCookie('connect.sid');
-    res.json({ message: 'Logout successful' });
+    // Destroy session
+    req.session.destroy((err) => {
+      if (err) {
+        logger.error('Session destruction error', { error: err.message });
+        return res.status(500).json({ message: 'Error during logout' });
+      }
+      
+      logger.info('Logout successful - Session destroyed');
+      res.clearCookie('connect.sid');
+      res.json({ message: 'Logged out successfully' });
+    });
   } catch (error) {
-    logger.error('Logout error:', error);
+    logger.error('Logout error', { error: error.message, stack: error.stack });
     res.status(500).json({ message: 'Error during logout' });
   }
 };
@@ -97,11 +133,94 @@ const logout = async (req, res) => {
 // Get current user profile
 const getCurrentUser = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
-    res.json({ user: user.getPublicProfile() });
+    logger.debug('0. MongoDB connection check', {
+      readyState: mongoose.connection.readyState,
+      host: mongoose.connection.host,
+      name: mongoose.connection.name
+    });
+
+    logger.debug('1. Starting getCurrentUser', { 
+      sessionID: req.sessionID,
+      cookies: req.cookies,
+      headers: req.headers
+    });
+
+    logger.debug('2. Session details', {
+      session: req.session ? JSON.stringify(req.session) : 'null',
+      userId: req.session?.userId
+    });
+
+    if (!req.session?.userId) {
+      logger.warn('3. No userId in session', {
+        session: req.session ? JSON.stringify(req.session) : 'null',
+        cookies: req.cookies
+      });
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.session.userId)) {
+      logger.warn('4a. Invalid ObjectId format', { 
+        userId: req.session.userId 
+      });
+      return res.status(400).json({ message: 'Invalid user ID format' });
+    }
+
+    logger.debug('4b. About to query user', { 
+      userId: req.session.userId
+    });
+
+    let user;
+    try {
+      user = await User.findById(req.session.userId)
+        .populate('department')
+        .select('-password');
+
+      logger.debug('5. Database query completed', {
+        userFound: !!user,
+        userId: req.session.userId
+      });
+
+      if (!user) {
+        logger.warn('6. User not found', { userId: req.session.userId });
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      logger.debug('7. User details', {
+        userId: user._id,
+        email: user.email,
+        role: user.role,
+        hasDepartment: !!user.department,
+        departmentId: user.department?._id,
+        skillsCount: user.skills?.length
+      });
+
+      logger.debug('8. Preparing response');
+      res.json(user.toJSON());
+      logger.debug('9. Response sent successfully');
+    } catch (dbError) {
+      logger.error('Database operation failed', {
+        error: dbError.message,
+        stack: dbError.stack,
+        code: dbError.code,
+        name: dbError.name,
+        operation: 'findById',
+        userId: req.session.userId
+      });
+      throw dbError;
+    }
   } catch (error) {
-    logger.error('Get current user error:', error);
-    res.status(500).json({ message: 'Error fetching user profile' });
+    logger.error('getCurrentUser error', { 
+      error: error.message, 
+      stack: error.stack,
+      type: error.name,
+      code: error.code,
+      session: req.session ? JSON.stringify(req.session) : 'null',
+      cookies: req.cookies
+    });
+    res.status(500).json({ 
+      message: 'Error fetching current user',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 

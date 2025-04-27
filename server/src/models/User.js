@@ -130,8 +130,13 @@ userSchema.pre('save', async function(next) {
 
 // Method to compare passwords
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  const user = await this.constructor.findById(this._id).select('+password');
-  return bcrypt.compare(candidatePassword, user.password);
+  try {
+    console.log('[DEBUG] candidatePassword:', candidatePassword);
+    console.log('[DEBUG] storedHash:', this.password);
+    return await bcrypt.compare(candidatePassword, this.password);
+  } catch (error) {
+    throw new Error('Password comparison failed');
+  }
 };
 
 // Method to get public profile

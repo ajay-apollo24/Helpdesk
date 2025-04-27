@@ -32,47 +32,53 @@ app.use(cookieParser());
 
 // CORS configuration
 const corsOptions = {
-  origin: function(origin, callback) {
-    const allowedOrigins = process.env.NODE_ENV === 'production'
-      ? [process.env.FRONTEND_URL]
-      : ['http://localhost:3000', 'http://127.0.0.1:3000'];
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: 'http://localhost:3000',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
-  exposedHeaders: ['Set-Cookie'],
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+  allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
 // Apply CORS middleware before any routes
 app.use(cors(corsOptions));
 
 // Session configuration
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'super-secret-key',
+const sessionConfig = {
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI,
-    ttl: 24 * 60 * 60 // Session TTL of 1 day
-  }),
+  name: 'connect.sid',
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-    maxAge: 24 * 60 * 60 * 1000, // 1 day
-    path: '/',
-    domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : 'localhost'
-  }
-}));
+    secure: false, // set to true in production
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    path: '/'
+  },
+  store: MongoStore.create({
+    mongoUrl: process.env.MONGODB_URI || 'mongodb://localhost:27017/helpdesk',
+    ttl: 24 * 60 * 60 // 24 hours
+  })
+};
+
+logger.info('Configuring session middleware', {
+  cookieSecure: sessionConfig.cookie.secure,
+  cookieSameSite: sessionConfig.cookie.sameSite,
+  cookieMaxAge: sessionConfig.cookie.maxAge
+});
+
+// Apply session middleware
+app.use(session(sessionConfig));
+
+// Log all requests
+app.use((req, res, next) => {
+  logger.info('Incoming request', {
+    method: req.method,
+    path: req.path,
+    sessionId: req.sessionID,
+    userId: req.session?.userId
+  });
+  next();
+});
 
 // Security middleware
 app.use(helmet({

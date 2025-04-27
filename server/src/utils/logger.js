@@ -12,15 +12,19 @@ const logFormat = winston.format.combine(
 
 // Create logger instance
 const logger = winston.createLogger({
-  level: config.logLevel || 'info',
-  format: logFormat,
+  level: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.colorize(),
+    winston.format.printf(({ level, message, timestamp, ...meta }) => {
+      const metaStr = Object.keys(meta).length ? `\n${JSON.stringify(meta, null, 2)}` : '';
+      return `${timestamp} [${level}]: ${message}${metaStr}`;
+    })
+  ),
   transports: [
     // Console transport
     new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.simple()
-      )
+      level: 'debug'
     }),
     // File transport for all logs
     new winston.transports.File({
@@ -44,5 +48,12 @@ logger.stream = {
     logger.info(message.trim());
   }
 };
+
+// Development logging
+if (process.env.NODE_ENV !== 'production') {
+  logger.debug = function(message, meta = {}) {
+    logger.log('debug', message, { ...meta, file: new Error().stack.split('\n')[2].trim() });
+  };
+}
 
 module.exports = logger; 

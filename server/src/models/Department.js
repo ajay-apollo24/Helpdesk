@@ -83,7 +83,7 @@ const departmentSchema = new mongoose.Schema({
 
 // Virtual for active agents count
 departmentSchema.virtual('activeAgentsCount').get(function() {
-  return this.agents.length;
+  return this.agents?.length || 0;
 });
 
 // Method to add agent

@@ -30,15 +30,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const checkAuth = async () => {
       try {
         const response = await fetch('http://localhost:6060/api/users/me', {
-          credentials: 'include'
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          }
         });
         
         if (response.ok) {
           const userData = await response.json();
           setUser(userData);
+        } else if (response.status === 401) {
+          // Not authenticated - clear user
+          setUser(null);
+        } else {
+          throw new Error('Failed to check authentication status');
         }
       } catch (err) {
         console.error('Auth check failed:', err);
+        setUser(null);
+        setError(err instanceof Error ? err.message : 'Authentication check failed');
       } finally {
         setIsLoading(false);
       }
@@ -55,6 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response = await fetch('http://localhost:6060/api/auth/login', {
         method: 'POST',
         headers: {
+          'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
         credentials: 'include',
@@ -67,7 +80,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error(data.message || 'Login failed');
       }
 
-      setUser(data.user);
+      // After successful login, fetch user data
+      const userResponse = await fetch('http://localhost:6060/api/users/me', {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!userResponse.ok) {
+        throw new Error('Failed to fetch user data after login');
+      }
+
+      const userData = await userResponse.json();
+      setUser(userData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
       throw err;
@@ -84,6 +112,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response = await fetch('http://localhost:6060/api/auth/logout', {
         method: 'POST',
         credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        }
       });
 
       if (!response.ok) {

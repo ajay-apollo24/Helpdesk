@@ -84,7 +84,7 @@ class Seeder {
           skills: ['Hardware', 'Software'],
           shift: {
             startTime: '09:00',
-            endTime: '17:00',
+            endTime: '23:30',
             days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
           }
         },
@@ -97,7 +97,7 @@ class Seeder {
           skills: ['Software', 'Network'],
           shift: {
             startTime: '13:00',
-            endTime: '21:00',
+            endTime: '23:00',
             days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
           }
         }
