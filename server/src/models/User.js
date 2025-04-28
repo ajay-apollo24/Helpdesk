@@ -24,7 +24,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: [USER_ROLES.AGENT, USER_ROLES.ADMIN], // Only internal user roles
+    enum: [USER_ROLES.AGENT, USER_ROLES.ADMIN, USER_ROLES.CUSTOMER],
     required: true
   },
   status: {

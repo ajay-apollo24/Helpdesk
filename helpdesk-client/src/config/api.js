@@ -1,4 +1,5 @@
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:6060/api';
+// Always use relative paths for API calls
+const API_BASE_URL = '/api';
 
 const API_ENDPOINTS = {
   // Auth endpoints
@@ -15,13 +16,14 @@ const API_ENDPOINTS = {
     DETAIL: (id) => `${API_BASE_URL}/tickets/${id}`,
     COMMENTS: (id) => `${API_BASE_URL}/tickets/${id}/comments`,
     ASSIGN: (id) => `${API_BASE_URL}/tickets/${id}/assign`,
-    STATUS: (id) => `${API_BASE_URL}/tickets/${id}/status`
+    STATUS: (id) => `${API_BASE_URL}/tickets/${id}/status`,
+    ASSIGNED: `${API_BASE_URL}/tickets/assigned`
   },
   
   // User endpoints
   USERS: {
     BASE: `${API_BASE_URL}/users`,
-    PROFILE: `${API_BASE_URL}/users/profile`,
+    PROFILE: `${API_BASE_URL}/users/me`,
     AGENTS: `${API_BASE_URL}/users/agents`,
     SHIFT: (id) => `${API_BASE_URL}/users/${id}/shift`
   },
@@ -34,4 +36,4 @@ const API_ENDPOINTS = {
   }
 };
 
-export default API_ENDPOINTS; 
+export { API_BASE_URL, API_ENDPOINTS }; 

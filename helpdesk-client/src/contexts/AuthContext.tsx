@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, LoginCredentials, AuthResponse } from '../types/auth';
+import { API_ENDPOINTS } from '../config/api';
 
 interface AuthContextType {
   user: User | null;
@@ -26,23 +27,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if user is already logged in
     const checkAuth = async () => {
       try {
-        const response = await fetch('http://localhost:6060/api/users/me', {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          }
+        const response = await fetch(API_ENDPOINTS.USERS.PROFILE, {
+          credentials: 'include'
         });
         
         if (response.ok) {
           const userData = await response.json();
           setUser(userData);
         } else if (response.status === 401) {
-          // Not authenticated - clear user
           setUser(null);
         } else {
           throw new Error('Failed to check authentication status');
@@ -64,14 +58,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch('http://localhost:6060/api/auth/login', {
+      const response = await fetch(API_ENDPOINTS.AUTH.LOGIN, {
         method: 'POST',
         headers: {
-          'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify(credentials),
+        credentials: 'include'
       });
 
       const data: AuthResponse = await response.json();
@@ -81,13 +74,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // After successful login, fetch user data
-      const userResponse = await fetch('http://localhost:6060/api/users/me', {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        }
+      const userResponse = await fetch(API_ENDPOINTS.USERS.PROFILE, {
+        credentials: 'include'
       });
 
       if (!userResponse.ok) {
@@ -109,13 +97,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch('http://localhost:6060/api/auth/logout', {
+      const response = await fetch(API_ENDPOINTS.AUTH.LOGOUT, {
         method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        }
+        credentials: 'include'
       });
 
       if (!response.ok) {
